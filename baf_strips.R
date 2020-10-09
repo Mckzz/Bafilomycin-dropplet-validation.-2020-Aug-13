@@ -44,7 +44,7 @@ ggplot(data = antSacs, aes(y = change, x = exposure)) +
     size = 3, position = position_dodge(0.7)) +
   geom_jitter(data = postSacs, colour = "firebrick", size = 3, position = position_dodge(width = 0.7), pch = 1)
 
-###
+##
 
 
 
