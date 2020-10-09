@@ -51,8 +51,6 @@ ggplot(data = antSacs, aes(y = change, x = exposure)) +
 
 
 
-
-
 aes(color = sac), size = 1.2, position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.8)) +
   stat_summary(aes(color = sac), fun.data="mean_sdl", fun.args = list(mult=1), size = 0.4, position = position_dodge(0.8)
                
