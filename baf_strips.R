@@ -9,6 +9,7 @@ install.packages("Hmisc")
 rm(percents)
 rm(e)
 
+
 str(percents)
 
 # makes strip charts with mean and stdv
