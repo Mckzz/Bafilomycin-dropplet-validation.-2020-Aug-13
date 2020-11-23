@@ -5,15 +5,68 @@ library(dplyr)
 library(ggplot2)
 library(Hmisc)
 install.packages("Hmisc")
+install.packages("lmerTest")
+library(lme4)
 
 rm(percents)
 rm(e)
 
 
 str(percents)
+print(percents, n=24)
 
-# makes strip charts with mean and stdv
-ggplot(percents, aes(y = change, x = exposure, colour= sac)) +
+######   wrangle raw data   ######
+
+rm(bafdrop)
+bafdrop <- as_tibble(bafdrop)
+
+#rename sac to treatment
+bafdrop <- bafdrop %>% 
+  rename(treatment = sac)
+
+print(bafdrop, n= 50)
+
+#making % change column
+bafdrop.pct <- bafdrop %>%
+  group_by(treatment, antpost, indvd) %>%
+  mutate(
+    area.pct.change = ((area - area[1]) / area[1]
+    )*100) %>%
+  ungroup() #why the ungroup?
+
+print(bafdrop.pct, n=100)
+str(bafdrop.pct)
+
+#Change the treatment category treatment to baf
+bafdrop.pct$treatment[bafdrop.pct$treatment == 'treatment'] <- 'baf'
+
+print(bafdrop.pct, n= 48)
+
+#dataframe with only the experimental (non-zero) %changes
+exp <- subset(bafdrop.pct, exposure == "experimental", 
+              select = c(treatment, antpost, area, indvd, area.pct.change))
+print(exp, n=24)
+
+## compute means and sds
+means.sd <-
+  bafdrop.pct %>% #still has baseline areas
+  select(-indvd) %>% 
+  group_by(exposure, treatment, antpost) %>% 
+  ## now compute mean and sd:
+  summarize(across(everything(), #how does the across everything work? is it that chr columns get created based on num columns that are summarized?
+                   tibble::lst(mean = mean, sd = sd)))
+
+print(means.sd, n= 50)
+
+#take only esperimental means/ sd 
+exp.mean.sd <- subset(means.sd, exposure == "experimental", 
+                      select = c(treatment, antpost, area_mean, area_sd, area.pct.change_mean, area.pct.change_sd))
+
+print(exp.mean.sd, n=24)
+
+
+##### makes strip charts with mean and stdv (from percents)
+ggplot(exp, aes(y = area.pct.change, x = treatment, colour= antpost)) +
   geom_jitter(size = 2, pch = 1, position = position_dodge(width = 0.7)) +
   labs(x = "exposure", y = "% change") + #labels axes
   theme_classic() +  #takes out background
@@ -24,45 +77,56 @@ ggplot(percents, aes(y = change, x = exposure, colour= sac)) +
     size = 3)
 
 
+########### stats ###########
 
-# test ##
-antSacs = percents %>%
-  select(exposure,sac,change) %>%
-  filter(sac == "ant")
-postSacs = percents %>%
-  select(exposure,sac,change) %>%
-  filter(sac == "post")
+stats_data <-
+  exp %>%
+  mutate(treatment = as_factor(treatment)) %>%
+  mutate(antpost = as_factor(antpost))
 
-ggplot(data = antSacs, aes(y = change, x = exposure)) + 
-  geom_jitter(colour = "firebrick", size = 3, position = position_dodge(width = 0.7), pch = 1) +
-  labs(x = "exposure", y = "% change") +
-  theme(aspect.ratio = 0.75, text = element_text(size = 16), 
-        axis.text = element_text(size = 14)) +
-  stat_summary(
-    data = antSacs, fun.data = mean_sdl, geom = "errorbar", position = position_dodge(0.7), width = 0.2, fun.args = list(mult=1)) +
-  stat_summary(
-    data = antSacs, fun = mean, geom = "point", pch = 19, 
-    size = 3, position = position_dodge(0.7)) +
-  geom_jitter(data = postSacs, colour = "firebrick", size = 3, position = position_dodge(width = 0.7), pch = 1)
-
-##
+print(stats_data, n= 24)
 
 
+# doesn't account for random effects
+mod1 <-
+  lm(area.pct.change ~ treatment * indvd, 
+     data = stats_data)
+summary(mod1)
 
+mod1.aov <- aov(mod1)
+TukeyHSD(mod1.aov)
 
+####
 
+stats_data$indvd <- as.factor(stats_data$indvd)
 
-aes(color = sac), size = 1.2, position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.8)) +
-  stat_summary(aes(color = sac), fun.data="mean_sdl", fun.args = list(mult=1), size = 0.4, position = position_dodge(0.8)
-               
-               
-               +
-                 stat_sum
-               fun.data = mean_sdl, geom = "errorbar", position_dodge(width = 0.7), fun.args = list(mult=1)) +
-  stat_summary(
-    fun = mean, geom = "point", 
-    size = 3)
+mcmod <-
+  MCMCglmm::MCMCglmm(
+    area.pct.change ~ treatment + antpost, random = ~indvd,
+    data = stats_data, scale = FALSE,
+    nitt = 1300000, thin = 1000, burnin = 300000, 
+    verbose = FALSE
+  )
 
+summary(mcmod)
 
+mean(mcmod$VCV[,1]/(mcmod$VCV[,1] + mcmod$VCV[,2]))
 
+#with interaction
+mcmod.inter <-
+  MCMCglmm::MCMCglmm(
+    area.pct.change ~ treatment * antpost, random = ~indvd,
+    data = stats_data, scale = FALSE,
+    nitt = 1300000, thin = 1000, burnin = 300000, 
+    verbose = FALSE
+  )
 
+summary(mcmod.inter)
+
+mean(mcmod.inter$VCV[,1]/(mcmod.inter$VCV[,1] + mcmod.inter$VCV[,2]))
+
+print(stats_data)
+
+z <- lmer(area.pct.change ~ treatment + (1|indvd), data = stats_data)
+summary(z)
+VarCorr(z)
